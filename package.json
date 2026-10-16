@@ -1,6 +1,6 @@
 {
   "name": "dsh-unrestricted",
-  "version": "0.2.3",
+  "version": "0.2.3-mobile.1",
   "engines": {
     "dsh": ">=0.2.0-rc.2 <0.2.2-0"
   },
@@ -51,7 +51,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node tools/typecheck.mjs",
     "test": "node --test tests/*.spec.mjs",
     "dump-prompts": "node tools/dump-prompts.mjs --repo ../../deepseek-harness --out tests/fixtures"
   },

@@ -227,6 +227,16 @@ try {
   const preExisting = await presetAgent('standard', '-pre')
   check('minimal baseline is the stock persona', baseline.minimal.text === 'You are a helpful software engineer assistant.')
 
+  // 实际宿主中注册独立第三方模式，验证无固定 ID 适配也能生效。
+  const fixturePath = join(home, 'third-party-fixture.mjs')
+  await writeFile(fixturePath, `export const inject = ['systemPrompt'];
+export function apply(ctx) {
+  ctx.effect(() => ctx.systemPrompt.section({name:'custom:persona', text:'A custom researcher.', order:0}));
+  ctx.effect(() => ctx.systemPrompt.section({name:'custom:policy', text:'Approval remains required.', order:1}));
+}`)
+  const unregisterThird = await ctx.agentPresets.register({ id: 'third-party-researcher', name: '研究员',
+    plugins: [{ id: 'fixture', name: pathToFileURL(fixturePath).href }] })
+  baseline['third-party-researcher'] = await assemblePrompt(await presetAgent('third-party-researcher'))
   console.log('toggle on')
   await setEnabled(true)
 
@@ -347,9 +357,27 @@ try {
     check(`${id} preview carries the contract`, text.includes(rules.EXECUTION_MODE_BLOCK))
   }
 
+  const customOn = await assemblePrompt(await presetAgent('third-party-researcher'))
+  check('third-party unknown ID automatically fused', customOn.text.includes(rules.EXECUTION_MODE_BLOCK))
+  check('third-party custom persona preserved', customOn.text.includes('A custom researcher.'))
+  check('third-party approval policy preserved', customOn.text.includes('Approval remains required.'))
+  check('third-party tools unchanged', customOn.tools === baseline['third-party-researcher'].tools)
+  const unregisterLate = await ctx.agentPresets.register({ id: 'late-third-party',
+    plugins: [{ id: 'fixture', name: pathToFileURL(fixturePath).href }] })
+  const late = await assemblePrompt(await presetAgent('late-third-party'))
+  check('third-party installed after enabling automatically fused', late.text.includes(rules.EXECUTION_MODE_BLOCK))
+  const completePath = join(home, 'complete-fixture.mjs')
+  await writeFile(completePath, `export const inject = ['systemPrompt'];
+export function apply(ctx) {
+  ctx.effect(() => ctx.systemPrompt.section({name:'custom:complete', order:0, complete:true, text:'Complete custom prompt.'}));
+}`)
+  const unregisterComplete = await ctx.agentPresets.register({ id: 'third-party-complete',
+    plugins: [{ id: 'fixture', name: pathToFileURL(completePath).href }] })
+  const complete = await assemblePrompt(await presetAgent('third-party-complete'))
+  check('third-party complete prompt passes through unchanged', complete.text === 'Complete custom prompt.')
   console.log('toggle off')
   await setEnabled(false)
-  for (const id of ['standard', 'ptc', 'cordis', 'minimal']) {
+  for (const id of ['standard', 'ptc', 'cordis', 'minimal', 'third-party-researcher']) {
     const off = await until(`${id} restore`, async () => {
       const prompt = await assemblePrompt(await presetAgent(id))
       return prompt.text === baseline[id].text ? prompt : false
@@ -357,6 +385,9 @@ try {
     check(`${id} restored to original`, off.text === baseline[id].text)
     check(`${id} tools still unchanged`, off.tools === baseline[id].tools)
   }
+  await unregisterThird()
+  await unregisterLate()
+  await unregisterComplete()
 } finally {
   for (const handle of agents.values()) await handle.dispose()
   await ctx.fiber.dispose()

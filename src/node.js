@@ -30,11 +30,12 @@
  * $DSH_HOME/profiles/web/cordis.patch.yml). Switching affects the NEXT assembly of any live
  * or future agent — never an in-flight request or a logged session event.
  */
+import { discoverPresets, fuseThirdParty } from './discovery.js'
 import z from '@deepseek-ai/schemastery'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import {
-  ANCHORS, PRESETS, PRESET_RULES, contractFingerprint, fuseSections, fusedMinimalPrompt, renderPreview,
+  ANCHORS, PRESETS, PRESET_RULES, BLOCK_SECTION, EXECUTION_MODE_BLOCK, contractFingerprint, fuseSections, fusedMinimalPrompt, renderPreview,
 } from './rules.js'
 
 /** Cordis plugin name used by Loader diagnostics. */
@@ -68,6 +69,8 @@ export function apply(ctx, config) {
 
   const state = {
     enabled: config.get().enabled,
+    discovered: new Map(PRESETS.map(id => [id, { id, name: id }])),
+    scanIssue: undefined,
     /** presetId -> issue strings; a preset with an empty list is verified. */
     startup: new Map(),
     /** presetId -> in-flight startup check. */
@@ -122,6 +125,20 @@ export function apply(ctx, config) {
    * minimal toggle never waits on the other three mounts). Idempotent per
    * preset until `recheck` clears it.
    */
+  function fuseMode(sections, presetId, options) {
+    return Object.hasOwn(PRESET_RULES, presetId)
+      ? fuseSections(sections, presetId, options)
+      : fuseThirdParty(sections, { name: BLOCK_SECTION, text: EXECUTION_MODE_BLOCK })
+  }
+
+  async function scanPresets() {
+    try {
+      await ctx.loader.await()
+      state.discovered = await discoverPresets(ctx.get('agentPresets'), PRESETS)
+      state.scanIssue = undefined
+    } catch (error) { state.scanIssue = messageOf(error) }
+  }
+
   function ensureCheck(presetId) {
     let pending = state.checking.get(presetId)
     if (pending !== undefined) return pending
@@ -137,7 +154,7 @@ export function apply(ctx, config) {
           return
         }
         const assembly = await presetAssembly(presetId)
-        const fused = fuseSections(assembly.sections, presetId)
+        const fused = fuseMode(assembly.sections, presetId)
         if (fused.issues !== undefined) issues.push(...fused.issues)
       } catch (error) {
         issues.push(`preset probe failed: ${messageOf(error)}`)
@@ -155,13 +172,14 @@ export function apply(ctx, config) {
   }
 
   /** Check every preset once (status surface and the `recheck` endpoint). */
-  function ensureChecks() {
+  async function ensureChecks() {
+    await scanPresets()
     return Promise.all(PRESETS.map(presetId => ensureCheck(presetId)))
   }
 
   /** Whether one preset may currently be fused. */
   function usable(presetId) {
-    return PRESETS.includes(presetId) && modeIssues(presetId).length === 0
+    return state.discovered.has(presetId) && state.startup.has(presetId) && modeIssues(presetId).length === 0
   }
 
   /**
@@ -258,10 +276,12 @@ export function apply(ctx, config) {
 
   /** Current card view: toggle and per-preset state. */
   function statusPayload() {
-    const modes = {}
-    for (const presetId of PRESETS) {
+    const modes = Object.create(null)
+    for (const presetId of state.discovered.keys()) {
       const issues = modeIssues(presetId)
       modes[presetId] = {
+        name: state.discovered.get(presetId)?.name ?? presetId,
+        thirdParty: !PRESETS.includes(presetId),
         state: !state.enabled
           ? 'off'
           : !state.startup.has(presetId)
@@ -270,7 +290,7 @@ export function apply(ctx, config) {
         issues,
       }
     }
-    return { enabled: state.enabled, contract: contractFingerprint(), modes }
+    return { enabled: state.enabled, contract: contractFingerprint(), modes, scanIssue: state.scanIssue }
   }
 
   /** One line-count/byte summary so the preview does not ship a whole prompt. */
@@ -316,7 +336,8 @@ export function apply(ctx, config) {
    */
   async function previewFor(presetId) {
     const contract = contractFingerprint()
-    if (!PRESETS.includes(presetId)) {
+    await scanPresets()
+    if (typeof presetId !== 'string' || !state.discovered.has(presetId)) {
       return { presetId, contract, available: false, reason: `unknown preset "${presetId}"` }
     }
     // Best source first: the exact bytes a top-level live agent just received.
@@ -331,7 +352,7 @@ export function apply(ctx, config) {
       const assembly = await presetAssembly(presetId)
       const fused = presetId === 'minimal'
         ? { sections: [{ name: 'deployment:persona-prefix', text: fusedMinimalPrompt() }] }
-        : fuseSections(assembly.sections, presetId)
+        : fuseMode(assembly.sections, presetId)
       if (fused.issues !== undefined) {
         return { presetId, contract, available: false, reason: fused.issues.join('; ') }
       }
@@ -347,6 +368,7 @@ export function apply(ctx, config) {
   async function handleRpc(endpoint, payload) {
     switch (endpoint) {
       case 'status': {
+        await scanPresets()
         if (state.enabled) await ensureChecks()
         return ok(statusPayload())
       }
@@ -377,7 +399,7 @@ export function apply(ctx, config) {
     const agent = context.agent
     if (agent === undefined) return original
     const presetId = resolveAgentPreset(agent, original.sections)
-    if (presetId === undefined || !PRESET_RULES[presetId]) {
+    if (presetId === undefined) {
       unshadowMinimal(agent)
       return original
     }
@@ -402,9 +424,14 @@ export function apply(ctx, config) {
     if (state.shadows.has(agent)) {
       unshadowMinimal(agent)
     }
+    if (!Object.hasOwn(PRESET_RULES, presetId)) {
+      // 运行中新增的模式在下一次真实组装时自动发现，不依赖重启。
+      if (!state.discovered.has(presetId)) state.discovered.set(presetId, { id: presetId, name: presetId })
+      await ensureCheck(presetId)
+    }
     if (!usable(presetId)) return original
     const isSubagent = original.contexts.some(entry => entry.name === 'subagent:delegation')
-    const fused = fuseSections(original.sections, presetId, { isSubagent })
+    const fused = fuseMode(original.sections, presetId, { isSubagent })
     if (fused.issues !== undefined) {
       state.runtime.set(presetId, fused.issues)
       return original

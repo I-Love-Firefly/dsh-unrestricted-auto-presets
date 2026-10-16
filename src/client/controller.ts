@@ -19,6 +19,8 @@ export interface UnrestrictedSettings {
 
 /** Per-preset fusion state reported by the host half. */
 export interface UnrestrictedModeState {
+  name?: string
+  thirdParty?: boolean
   state: 'off' | 'checking' | 'active' | 'failed'
   issues: string[]
 }
@@ -29,6 +31,7 @@ export interface UnrestrictedStatus {
   /** Fingerprint of the contract bytes the host half deploys. */
   contract: string
   modes: Record<string, UnrestrictedModeState>
+  scanIssue?: string
 }
 
 /** Deploy preview for one preset: what switching on would actually assemble. */

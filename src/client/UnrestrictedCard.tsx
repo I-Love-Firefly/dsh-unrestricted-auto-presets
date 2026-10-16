@@ -68,6 +68,12 @@ export function UnrestrictedCard(props: UnrestrictedCardProps) {
     }
   }, [openPreview, openEntry, loadPreview])
 
+  const modeRows = [
+    ...MODE_ROWS.map(row => ({ id: row.id, label: t(row.labelKey), preset: t(row.presetKey) })),
+    ...Object.entries(status?.modes ?? {})
+      .filter(([id]) => !MODE_ROWS.some(row => row.id === id))
+      .map(([id, mode]) => ({ id, label: mode.name ?? id, preset: id })),
+  ]
   const hasFailedMode = status !== null
     && Object.values(status.modes).some(mode => mode.state === 'failed')
   const summaryKey: UnrestrictedLocaleKey = view.settingsStatus === 'loading'
@@ -127,18 +133,19 @@ export function UnrestrictedCard(props: UnrestrictedCardProps) {
         {view.message !== undefined && (
           <p className="dsh-unrestricted-error">{t('operationFailed')}{view.message}</p>
         )}
+        {status?.scanIssue && <p className="dsh-unrestricted-error">{status.scanIssue}</p>}
         <h4 className="dsh-unrestricted-statusTitle">{t('statusTitle')}</h4>
         <ul className="dsh-unrestricted-modes">
-          {MODE_ROWS.map((row) => {
+          {modeRows.map((row) => {
             const mode = status?.modes[row.id]
             const entry = view.previews[row.id]
             const isOpen = openPreview === row.id
             return (
               <li key={row.id} className="dsh-unrestricted-mode">
                 <span className="dsh-unrestricted-dot" data-state={mode?.state ?? 'off'} />
-                <span className="dsh-unrestricted-modeName">{t(row.labelKey)}</span>
+                <span className="dsh-unrestricted-modeName">{row.label}</span>
                 <span className="dsh-unrestricted-modeState">{t(stateKey(mode))}</span>
-                <code className="dsh-unrestricted-presetId">{t(row.presetKey)}</code>
+                <code className="dsh-unrestricted-presetId">{row.preset}</code>
                 <button
                   type="button"
                   className="dsh-unrestricted-inlineAction"
