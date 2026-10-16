@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { discoverPresets, fuseThirdParty } from '../src/discovery.js'
+import { discoverPresets, checkDiscoveredPresets, fuseThirdParty } from '../src/discovery.js'
+
+test('刷新与重新检查必须等待所有第三方模式检查结束', async () => {
+  const discovered = await discoverPresets({ list: async () => [{ id: 'writer' }, { id: 'researcher' }] }, ['standard'])
+  const finished = new Set()
+  await checkDiscoveredPresets(discovered, async id => {
+    await new Promise(resolve => setImmediate(resolve))
+    finished.add(id)
+  })
+  assert.deepEqual([...finished].sort(), ['researcher', 'standard', 'writer'])
+})
 
 test('扫描注册表包含第三方模式并跟随安装和移除', async () => {
   let rows = [{ id: 'researcher', name: '研究员' }, { id: 'broken', broken: 'missing tool' }]

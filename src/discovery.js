@@ -11,6 +11,11 @@ export async function discoverPresets(registry, known) {
   return found
 }
 
+/** 校验本次扫描得到的全部模式，不能只调度内置模式。 */
+export async function checkDiscoveredPresets(discovered, check) {
+  await Promise.all([...discovered.keys()].map(id => check(id)))
+}
+
 /** 第三方模式仅增加独立分块，原角色、工具协议与审批正文逐字保留。 */
 export function fuseThirdParty(sections, block) {
   if (!Array.isArray(sections) || sections.some(row => typeof row?.text !== 'string')) {

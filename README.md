@@ -1,5 +1,5 @@
-> **第三方模式自动发现版（0.2.3-mobile.1）**
-> 本仓库基于 [yexi-by/dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted) 修改。自动读取 Harness 模式注册表，在界面显示第三方模式，并在实际使用时追加规则。完整提示词等特殊模式会报告需要适配。详见 [修改说明与验证范围](docs/third-party-mobile.md)。尚未安装到 Android 手机验证。
+> **第三方模式自动发现版（0.2.3-mobile.2）**
+> 本仓库基于 [yexi-by/dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted) 修改。自动读取 Harness 模式注册表，在界面显示第三方模式，刷新和重新检查会校验所有模式，并在实际使用时追加规则。完整提示词等特殊模式会报告需要适配。详见 [修改说明与验证范围](docs/third-party-mobile.md)。尚未安装到 Android 手机验证。
 > 安装本分支：`dsh plugin --profile web add github:I-Love-Firefly/dsh-unrestricted-auto-presets`。下方上游安装命令指向原版。
 > 开发检查：`npm test`、`npm run build`、`npm run typecheck -- --repo <已构建的Harness目录>`。
 

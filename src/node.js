@@ -30,7 +30,7 @@
  * $DSH_HOME/profiles/web/cordis.patch.yml). Switching affects the NEXT assembly of any live
  * or future agent — never an in-flight request or a logged session event.
  */
-import { discoverPresets, fuseThirdParty } from './discovery.js'
+import { discoverPresets, checkDiscoveredPresets, fuseThirdParty } from './discovery.js'
 import z from '@deepseek-ai/schemastery'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -174,7 +174,7 @@ export function apply(ctx, config) {
   /** Check every preset once (status surface and the `recheck` endpoint). */
   async function ensureChecks() {
     await scanPresets()
-    return Promise.all(PRESETS.map(presetId => ensureCheck(presetId)))
+    return checkDiscoveredPresets(state.discovered, ensureCheck)
   }
 
   /** Whether one preset may currently be fused. */
